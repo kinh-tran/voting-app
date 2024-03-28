@@ -1,0 +1,20 @@
+{{ block "results-display" . }}
+    <div id="content" class="flex justify-center items-center h-screen">
+        <div class="grid grid-cols-1">
+            {{ range .Data }}
+                {{ template "result" .}}
+            {{ end }}
+            <div class="text-6xl">
+                <button class="hover:bg-gray-400 py-10" hx-get="/logout" hx-swap="outerHTML" hx-target="#content">Logout</button>
+            </div>
+        </div>
+    </div>
+{{ end }}
+
+{{ block "result" . }}
+        <img 
+            {{ if .Image }}
+            src="/images/results.png"
+            {{ end }}
+        class="h-100 w-100">
+{{ end }}

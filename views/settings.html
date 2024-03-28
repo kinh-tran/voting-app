@@ -1,0 +1,17 @@
+{{ block "settings-display" . }}
+    <div id="content" class="text-5xl pt-10">
+        {{ range .Data }}
+            {{ template "settings-option" . }}
+        {{ end }}
+    </div>
+{{ end }}
+
+{{ block "settings-option" . }}
+    <div hx-get="/logout" hx-swap="outerHTML" hx-target="#content">
+        <h2>
+            {{ if .Name }}
+                {{ .Name }}
+            {{ end }}
+        </h2>
+    </div>
+{{ end }}

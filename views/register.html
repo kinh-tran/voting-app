@@ -1,0 +1,17 @@
+{{ block "register-display" . }}
+    <div id="content" class="text-5xl pt-10">
+        {{ range .Data }}
+            {{ template "register-option" . }}
+        {{ end }}
+    </div>
+{{ end }}
+
+{{ block "register-option" . }}
+    <div hx-get="/logout" hx-swap="outerHTML" hx-target="#content" class="py-10">
+        <h2>
+            {{ if .Name }}
+                {{ .Name }}
+            {{ end }}
+        </h2>
+    </div>
+{{ end }}

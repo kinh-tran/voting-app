@@ -1,0 +1,53 @@
+{{ block "voting-display" . }}
+    <div id="content" class="flex justify-center items-center">
+        <form hx-post="/vote" hx-swap="outerHTML" hx-target="#content">
+            {{ range .Data }}
+                {{ template "voting-option" . }}
+            {{ end }}
+            <div class="grid grid-cols-2 text-6xl">
+                <button class="hover:bg-gray-400" hx-get="/logout" hx-swap="outerHTML" hx-target="#content">Logout</button>
+                <button class="hover:bg-gray-400" type="submit">Vote</button>
+            </div>
+        </form>
+    </div>
+{{ end }}
+
+{{ block "voting-option" . }}
+    <div > 
+        <label class="grid grid-cols-3 py-10">
+            <img 
+                {{ if .Image }}
+                src="{{ .Image }}"
+                {{ end }}
+            class="h-40 w-40">
+            <span class="flex items-center justify-center">
+                {{ if .Name }}
+                <p class="text-5xl text-center">{{ .Name }}</p>
+                {{ end }}
+            </span>
+            <input type="radio" 
+                {{ if .Name }}
+                    id="{{ .Name }}" 
+                {{ end }}
+                name="preselect"
+            >  
+        </label>
+    </div>
+{{ end }}
+
+{{ block "voted" . }}
+<div id="content" class="flex justify-center items-center h-screen">
+    <div>
+        <form id="login-form" hx-get="/results" hx-swap="outerHTML" hx-target="#content" class="text-8xl">
+                Thanks For Voting!
+            <div>
+                <button type="submit" class="text-6xl pt-10 hover:bg-gray-400">View Results</button>
+            </div>
+        </form>
+    </div>
+</div>
+{{ end }}
+
+{{ block "results" . }}
+    {{ template "results-display" .Data }}
+{{ end }}
