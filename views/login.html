@@ -1,21 +1,18 @@
 
 {{ block "register-form" . }}
-<div id="register" hx-get="/register" hx-swap="outerHTML" hx-target="#content">
-    <button class="hover:bg-gray-400" type="submit">Register</button>
+<div>
+    <button class="hover:bg-gray-400 py-10" _="on click call register()" >Register</button>
+    <!-- <button class="hover:bg-gray-400 py-10" id="register" hx-post="/register" hx-swap="outerHTML" hx-target="#content" type="submit">Register</button> -->
 </div>
 {{ end }}
 
 {{ block "login-form" . }}
     <div id="content" class="flex justify-center items-center h-screen">
-        <div class="text-6xl">
-            <form id="login-form" hx-post="/login" hx-swap="outerHTML" hx-target="#content">
-                <label for="email">
-                    <input type="email" class="border border-2 border-black rounded-lg block w-full" placeholder="Email Address">
-                </label>
-                <div>
-                    <button class="hover:bg-gray-400 pt-10" type="submit">Login</button>
-                </div>
-            </form>
+        <div class="text-6xl" >
+            <input id="email" name="email" type="text" class="border border-2 border-black rounded-lg block w-full" placeholder="Email Address">
+            <div>
+                <button class="hover:bg-gray-400 py-10" _="on click call login()" >Login</button>
+            </div>
             {{ template "register-form" .}}
         </div>
     </div>

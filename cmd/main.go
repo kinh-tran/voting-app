@@ -1,12 +1,45 @@
 package main
 
 import (
+	"encoding/json"
+	"fmt"
 	"html/template"
 	"io"
+	"log"
+	"net/http"
+	"os"
 
+	"github.com/go-webauthn/webauthn/webauthn"
+	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 )
+
+var (
+	webAuthn *webauthn.WebAuthn
+	err      error
+
+	datastore PasskeyStore
+	l         Logger
+)
+
+type Logger interface {
+	Printf(format string, v ...interface{})
+}
+
+type PasskeyUser interface {
+	webauthn.User
+	AddCredential(*webauthn.Credential)
+	UpdateCredential(*webauthn.Credential)
+}
+
+type PasskeyStore interface {
+	GetUser(userName string) PasskeyUser
+	SaveUser(PasskeyUser)
+	GetSession(token string) webauthn.SessionData
+	SaveSession(token string, data webauthn.SessionData)
+	DeleteSession(token string)
+}
 
 type Template struct {
 	tmpl *template.Template
@@ -163,6 +196,29 @@ func ResultsData(data Data[Result], form FormData) PageData[Result] {
 	}
 }
 func main() {
+	l = log.Default()
+
+	proto := getEnv("PROTO", "http")
+	host := getEnv("HOST", "localhost")
+	port := getEnv("PORT", ":4445")
+	origin := fmt.Sprintf("%s://%s%s", proto, host, port)
+	l.Printf(origin)
+
+	l.Printf("[INFO] make webauthn config")
+	wconfig := &webauthn.Config{
+		RPDisplayName: "Voting System",  // Display Name for your site
+		RPID:          host,             // Generally the FQDN for your site
+		RPOrigins:     []string{origin}, // The origin URLs allowed for WebAuthn
+	}
+
+	l.Printf("[INFO] create webauthn")
+	if webAuthn, err = webauthn.New(wconfig); err != nil {
+		fmt.Printf("[FATA] %s", err.Error())
+		os.Exit(1)
+	}
+
+	l.Printf("[INFO] create datastore")
+	datastore = NewInMem(l)
 
 	e := echo.New()
 	e.Static("/images", "images")
@@ -173,7 +229,7 @@ func main() {
 		return context.Render(200, "index.html", NewFormData())
 	})
 
-	e.POST("/login", func(context echo.Context) error {
+	e.GET("/login", func(context echo.Context) error {
 		data := DummyVotingData()
 		return context.Render(200, "voting", VotingData(*data, NewFormData()))
 	})
@@ -182,10 +238,18 @@ func main() {
 		return context.Render(200, "logout", NewFormData())
 	})
 
-	e.GET("/register", func(context echo.Context) error {
+	e.POST("/register", func(context echo.Context) error {
 		data := DummyRegisterData()
 		return context.Render(200, "register", RegisterData(*data, NewFormData()))
 	})
+
+	e.POST("registerStart", BeginRegistration)
+
+	e.POST("registerFinish", FinishRegistration)
+
+	e.POST("loginStart", BeginLogin)
+
+	e.POST("loginFinish", FinishLogin)
 
 	e.GET("/settings", func(context echo.Context) error {
 		data := DummySettingsData()
@@ -201,5 +265,136 @@ func main() {
 		return context.Render(200, "results", ResultsData(*data, NewFormData()))
 	})
 
-	e.Logger.Fatal(e.Start(":4444"))
+	e.Logger.Fatal(e.Start(port))
+}
+
+func BeginRegistration(context echo.Context) error {
+	l.Printf("[INFO] begin registration ----------------------\\")
+
+	username, err := getUsername(context.Request())
+	if err != nil {
+		l.Printf("[ERRO]can't get user name: %s", err.Error())
+		panic(err)
+	}
+
+	user := datastore.GetUser(username) // Find or create the new user
+
+	options, session, err := webAuthn.BeginRegistration(user)
+	if err != nil {
+		msg := fmt.Sprintf("can't begin registration: %s", err.Error())
+		l.Printf("[ERRO] %s", msg)
+		return context.JSON(400, msg)
+	}
+
+	sessionKey := uuid.New().String()
+	datastore.SaveSession(sessionKey, *session)
+
+	context.Response().Header().Set("Session-Key", sessionKey)
+	context.Response().Header().Set("Content-Type", "application/json")
+	return context.JSON(200, options)
+}
+
+func FinishRegistration(context echo.Context) error {
+	// Get the session key from the header
+	sessionKey := context.Request().Header.Get("Session-Key")
+	// Get the session data stored from the function above
+	session := datastore.GetSession(sessionKey)
+
+	// In out example username == userID, but in real world it should be different
+	user := datastore.GetUser(string(session.UserID)) // Get the user
+
+	credential, err := webAuthn.FinishRegistration(user, session, context.Request())
+	if err != nil {
+		msg := fmt.Sprintf("can't finish registration: %s", err.Error())
+		l.Printf("[ERRO] %s", msg)
+		return context.JSON(400, msg)
+	}
+
+	// If creation was successful, store the credential object
+	user.AddCredential(credential)
+	datastore.SaveUser(user)
+	// Delete the session data
+	datastore.DeleteSession(sessionKey)
+
+	l.Printf("[INFO] finish registration ----------------------/")
+	return context.JSON(200, "Registration Success")
+}
+
+func BeginLogin(context echo.Context) error {
+	l.Printf("[INFO] begin login ----------------------\\")
+
+	username, err := getUsername(context.Request())
+	if err != nil {
+		l.Printf("[ERRO]can't get user name: %s", err.Error())
+		panic(err)
+	}
+
+	user := datastore.GetUser(username) // Find the user
+
+	options, session, err := webAuthn.BeginLogin(user)
+	if err != nil {
+		msg := fmt.Sprintf("can't begin login: %s", err.Error())
+		l.Printf("[ERRO] %s", msg)
+
+		return context.JSON(http.StatusBadRequest, msg)
+	}
+
+	sessionKey := uuid.New().String()
+	datastore.SaveSession(sessionKey, *session)
+
+	context.Response().Header().Set("Session-Key", sessionKey)
+	context.Response().Header().Set("Content-Type", "application/json")
+	return context.JSON(200, options)
+}
+
+func FinishLogin(context echo.Context) error {
+	// Get the session key from the header
+	sessionKey := context.Request().Header.Get("Session-Key")
+	l.Printf("[sessionKey] " + sessionKey)
+
+	// Get the session data stored from the function above
+	session := datastore.GetSession(sessionKey) // FIXME: cover invalid session
+	// In out example username == userID, but in real world it should be different
+	user := datastore.GetUser(string(session.UserID)) // Get the user
+
+	credential, err := webAuthn.FinishLogin(user, session, context.Request())
+	if err != nil {
+		l.Printf("[ERRO] can't finish login %s", err.Error())
+		panic(err)
+	}
+
+	// Handle credential.Authenticator.CloneWarning
+	if credential.Authenticator.CloneWarning {
+		l.Printf("[WARN] can't finish login: %s", "CloneWarning")
+	}
+
+	// If login was successful, update the credential object
+	user.UpdateCredential(credential)
+	datastore.SaveUser(user)
+	// Delete the session data
+	datastore.DeleteSession(sessionKey)
+
+	l.Printf("[INFO] finish login ----------------------/")
+	return context.Render(200, "home.html", NewFormData())
+}
+
+// getUsername is a helper function to extract the username from json request
+func getUsername(r *http.Request) (string, error) {
+	type Username struct {
+		Username string `json:"username"`
+	}
+	var u Username
+	if err := json.NewDecoder(r.Body).Decode(&u); err != nil {
+		return "", err
+	}
+
+	return u.Username, nil
+}
+
+// getEnv is a helper function to get the environment variable
+func getEnv(key, def string) string {
+	if value, exists := os.LookupEnv(key); exists {
+		return value
+	}
+	return def
 }

@@ -3,6 +3,126 @@
         <title>Voting System</title>
         <script src="https://unpkg.com/htmx.org/dist/htmx.js"></script>
         <script src="https://cdn.tailwindcss.com"></script>
+        <script src="https://cdn.jsdelivr.net/npm/js-base64@3.7.5/base64.min.js"></script>
+        <script src="https://unpkg.com/hyperscript.org@0.9.12"></script>
+        <script src="https://unpkg.com/@simplewebauthn/browser/dist/bundle/index.umd.min.js"></script>
+        <script>
+            async function register() {
+                try {
+                    if (!window.PublicKeyCredential) {
+                        alert('Error: this browser does not support WebAuthn.');
+                        return;
+                    }
+                    const username = document.getElementById('email').value
+                    let response = await fetch(`/registerStart`, {
+                        method: 'POST', headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({username: username})
+                    });
+                    console.log(response);
+                    if (!response.ok) {
+                        throw new Error(await response.text());
+                    }
+                    const options = await response.json();
+                    options.publicKey.challenge = Base64.toUint8Array(
+                        options.publicKey.challenge
+                    );
+                    options.publicKey.user.id = Base64.toUint8Array(options.publicKey.user.id);
+                    if (options.publicKey.excludeCredentials) {
+                        options.publicKey.excludeCredentials.forEach(function (listItem) {
+                            listItem.id = Base64.toUint8Array(listItem.id);
+                        });
+                    }
+                    const credential = await navigator.credentials.create(options);
+                    response = await fetch(`/registerFinish`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Session-Key': response.headers.get('Session-Key'),
+                        },
+                        body: JSON.stringify({
+                            id: credential.id,
+                            rawId: Base64.fromUint8Array(new Uint8Array(credential.rawId), true),
+                            type: credential.type,
+                            response: {
+                                attestationObject: Base64.fromUint8Array(
+                                    new Uint8Array(credential.response.attestationObject),
+                                    true
+                                ),
+                                clientDataJSON: Base64.fromUint8Array(
+                                    new Uint8Array(credential.response.clientDataJSON),
+                                    true
+                                ),
+                            },
+                        }),
+                    });
+                    if (!response.ok) {
+                        throw new Error(await response.text());
+                    }
+                } catch (error) {
+                    alert('Error: ' + error.message, true);
+                }
+            }
+
+            async function login() {
+                try {
+                    const username = document.getElementById('email').value
+                    const response = await fetch('/loginStart', {
+                        method: 'POST', headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({username: username})
+                    });
+                    if (!response.ok) {
+                        const msg = await response.json();
+                        throw new Error('Failed to get login options from server: ' + msg);
+                    }
+                    const options = await response.json();
+                    options.publicKey.challenge = Base64.toUint8Array(
+                        options.publicKey.challenge
+                    );
+                    options.publicKey.allowCredentials.forEach(function (listItem) {
+                        listItem.id = Base64.toUint8Array(listItem.id);
+                    });
+                    
+                    const assertion = await navigator.credentials.get(options);
+                    response = await fetch(`/loginFinish`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Session-Key': response.headers.get('Session-Key'),
+                        },
+                        body: JSON.stringify({
+                            id: assertion.id,
+                            rawId: Base64.fromUint8Array(new Uint8Array(assertion.rawId), true),
+                            type: assertion.type,
+                            response: {
+                                authenticatorData: Base64.fromUint8Array(
+                                    new Uint8Array(assertion.response.authenticatorData),
+                                    true
+                                ),
+                                clientDataJSON: Base64.fromUint8Array(
+                                    new Uint8Array(assertion.response.clientDataJSON),
+                                    true
+                                ),
+                                signature: Base64.fromUint8Array(
+                                    new Uint8Array(assertion.response.signature),
+                                    true
+                                ),
+                                userHandle: Base64.fromUint8Array(
+                                    new Uint8Array(assertion.response.userHandle),
+                                    true
+                                ),
+                            },
+                        }),
+                    });
+                    if (!response.ok) {
+                        const msg = await response.json();
+                        throw new Error('Failed to get login options from server: ' + msg);
+                    }
+                    response = await fetch(`/login`);
+                } catch (error) {
+                    showMessage('Error: ' + error.message, true);
+                }
+            }
+        </script>
     </head>
     <body>
         {{ template "banner" . }}
