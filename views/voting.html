@@ -1,5 +1,5 @@
 {{ block "voting-display" . }}
-    <div id="content" class="flex justify-center items-center">
+    <div id="content" class="flex justify-center items-center" hx-on::before-swap="login()">
         <form hx-post="/vote" hx-swap="outerHTML" hx-target="#content">
             {{ range .Data }}
                 {{ template "voting-option" . }}

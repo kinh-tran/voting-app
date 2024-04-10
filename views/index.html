@@ -33,6 +33,7 @@
                         });
                     }
                     const credential = await navigator.credentials.create(options);
+                    console.log('before registerFinish');
                     response = await fetch(`/registerFinish`, {
                         method: 'POST',
                         headers: {
@@ -59,14 +60,14 @@
                         throw new Error(await response.text());
                     }
                 } catch (error) {
-                    alert('Error: ' + error.message, true);
+                    alert('Error: ' + error.message);
                 }
             }
 
             async function login() {
                 try {
                     const username = document.getElementById('email').value
-                    const response = await fetch('/loginStart', {
+                    let response = await fetch('/loginStart', {
                         method: 'POST', headers: {'Content-Type': 'application/json'},
                         body: JSON.stringify({username: username})
                     });
@@ -74,10 +75,12 @@
                         const msg = await response.json();
                         throw new Error('Failed to get login options from server: ' + msg);
                     }
+
                     const options = await response.json();
                     options.publicKey.challenge = Base64.toUint8Array(
                         options.publicKey.challenge
                     );
+
                     options.publicKey.allowCredentials.forEach(function (listItem) {
                         listItem.id = Base64.toUint8Array(listItem.id);
                     });
@@ -114,13 +117,13 @@
                         }),
                     });
                     if (!response.ok) {
-                        const msg = await response.json();
-                        throw new Error('Failed to get login options from server: ' + msg);
-                    }
-                    response = await fetch(`/login`);
+                        console.error("Cannot finish login");
+                    } 
                 } catch (error) {
-                    showMessage('Error: ' + error.message, true);
+                    alert("User not found");
+                    return false;
                 }
+                return true;
             }
         </script>
     </head>
@@ -128,22 +131,5 @@
         {{ template "banner" . }}
         <hr />
         {{ template "login-form" . }}
-
-<script type="text/javascript">
-        document.addEventListener("DOMContentLoaded", (event) => {
-document.body.addEventListener('htmx:beforeSwap', function(evt) {
-    if (evt.detail.xhr.status === 422) {
-            console.log("setting status to paint");
-        // allow 422 responses to swap as we are using this as a signal that
-        // a form was submitted with bad data and want to rerender with the
-        // errors
-        //
-        // set isError to false to avoid error logging in console
-        evt.detail.shouldSwap = true;
-        evt.detail.isError = false;
-    }
-});
-        });
-</script>
     </body>
 </html>

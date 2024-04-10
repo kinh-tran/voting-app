@@ -229,7 +229,7 @@ func main() {
 		return context.Render(200, "index.html", NewFormData())
 	})
 
-	e.GET("/login", func(context echo.Context) error {
+	e.POST("/login", func(context echo.Context) error {
 		data := DummyVotingData()
 		return context.Render(200, "voting", VotingData(*data, NewFormData()))
 	})
@@ -295,12 +295,9 @@ func BeginRegistration(context echo.Context) error {
 }
 
 func FinishRegistration(context echo.Context) error {
-	// Get the session key from the header
 	sessionKey := context.Request().Header.Get("Session-Key")
-	// Get the session data stored from the function above
 	session := datastore.GetSession(sessionKey)
 
-	// In out example username == userID, but in real world it should be different
 	user := datastore.GetUser(string(session.UserID)) // Get the user
 
 	credential, err := webAuthn.FinishRegistration(user, session, context.Request())
@@ -310,10 +307,8 @@ func FinishRegistration(context echo.Context) error {
 		return context.JSON(400, msg)
 	}
 
-	// If creation was successful, store the credential object
 	user.AddCredential(credential)
 	datastore.SaveUser(user)
-	// Delete the session data
 	datastore.DeleteSession(sessionKey)
 
 	l.Printf("[INFO] finish registration ----------------------/")
@@ -348,13 +343,10 @@ func BeginLogin(context echo.Context) error {
 }
 
 func FinishLogin(context echo.Context) error {
-	// Get the session key from the header
 	sessionKey := context.Request().Header.Get("Session-Key")
 	l.Printf("[sessionKey] " + sessionKey)
 
-	// Get the session data stored from the function above
-	session := datastore.GetSession(sessionKey) // FIXME: cover invalid session
-	// In out example username == userID, but in real world it should be different
+	session := datastore.GetSession(sessionKey)       // FIXME: cover invalid session
 	user := datastore.GetUser(string(session.UserID)) // Get the user
 
 	credential, err := webAuthn.FinishLogin(user, session, context.Request())
@@ -363,22 +355,18 @@ func FinishLogin(context echo.Context) error {
 		panic(err)
 	}
 
-	// Handle credential.Authenticator.CloneWarning
 	if credential.Authenticator.CloneWarning {
 		l.Printf("[WARN] can't finish login: %s", "CloneWarning")
 	}
 
-	// If login was successful, update the credential object
 	user.UpdateCredential(credential)
 	datastore.SaveUser(user)
-	// Delete the session data
 	datastore.DeleteSession(sessionKey)
 
 	l.Printf("[INFO] finish login ----------------------/")
-	return context.Render(200, "home.html", NewFormData())
+	return context.JSON(200, "Login finished")
 }
 
-// getUsername is a helper function to extract the username from json request
 func getUsername(r *http.Request) (string, error) {
 	type Username struct {
 		Username string `json:"username"`
@@ -391,7 +379,6 @@ func getUsername(r *http.Request) (string, error) {
 	return u.Username, nil
 }
 
-// getEnv is a helper function to get the environment variable
 func getEnv(key, def string) string {
 	if value, exists := os.LookupEnv(key); exists {
 		return value

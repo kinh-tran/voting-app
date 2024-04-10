@@ -11,10 +11,21 @@
         <div class="text-6xl" >
             <input id="email" name="email" type="text" class="border border-2 border-black rounded-lg block w-full" placeholder="Email Address">
             <div>
-                <button class="hover:bg-gray-400 py-10" _="on click call login()" >Login</button>
+                <button id="login-button" class="hover:bg-gray-400 py-10">Login</button>
             </div>
             {{ template "register-form" .}}
         </div>
+
+        <script>
+            document.getElementById('login-button').addEventListener('click', async function() {
+                var isLogin = await login();
+                console.log('after login()');
+                if (isLogin) {
+                    htmx.ajax('POST', '/login', {target:'#content', swap:'outerHTML'});
+                }
+                console.log('after ajax');
+            });
+        </script>
     </div>
 {{ end }}
 
