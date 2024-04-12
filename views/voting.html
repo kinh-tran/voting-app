@@ -5,7 +5,7 @@
                 {{ template "voting-option" . }}
             {{ end }}
             <div class="grid grid-cols-2 text-6xl">
-                <button class="hover:bg-gray-400" hx-get="/logout" hx-swap="outerHTML" hx-target="#content">Logout</button>
+                <button class="hover:bg-gray-400" hx-get="/" hx-swap="outerHTML" hx-target="#content">Logout</button>
                 <button class="hover:bg-gray-400" type="submit">Vote</button>
             </div>
         </form>
@@ -26,10 +26,11 @@
                 {{ end }}
             </span>
             <input type="radio" 
+                name="preselect"
                 {{ if .Name }}
                     id="{{ .Name }}" 
+                    value="{{ .Name }}"
                 {{ end }}
-                name="preselect"
             >  
         </label>
     </div>
@@ -38,7 +39,7 @@
 {{ block "voted" . }}
 <div id="content" class="flex justify-center items-center h-screen">
     <div>
-        <form id="login-form" hx-get="/results" hx-swap="outerHTML" hx-target="#content" class="text-8xl">
+        <form id="voted-form" hx-get="/results" hx-swap="outerHTML" hx-target="#content" class="text-8xl">
                 Thanks For Voting!
             <div>
                 <button type="submit" class="text-6xl pt-10 hover:bg-gray-400">View Results</button>

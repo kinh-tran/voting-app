@@ -18,7 +18,6 @@
                         method: 'POST', headers: {'Content-Type': 'application/json'},
                         body: JSON.stringify({username: username})
                     });
-                    console.log(response);
                     if (!response.ok) {
                         throw new Error(await response.text());
                     }
@@ -33,7 +32,6 @@
                         });
                     }
                     const credential = await navigator.credentials.create(options);
-                    console.log('before registerFinish');
                     response = await fetch(`/registerFinish`, {
                         method: 'POST',
                         headers: {
@@ -120,7 +118,6 @@
                         console.error("Cannot finish login");
                     } 
                 } catch (error) {
-                    alert("User not found");
                     return false;
                 }
                 return true;

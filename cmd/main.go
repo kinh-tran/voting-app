@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"html/template"
@@ -8,16 +9,19 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/google/uuid"
+	"github.com/hyperledger/fabric-sdk-go/pkg/core/config"
+	"github.com/hyperledger/fabric-sdk-go/pkg/gateway"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
+	"github.com/wcharczuk/go-chart/v2"
 )
 
 var (
 	webAuthn *webauthn.WebAuthn
-	err      error
 
 	datastore PasskeyStore
 	l         Logger
@@ -98,7 +102,7 @@ func DummyResultsData() *Data[Result] {
 		Data: []Result{
 			{
 				Name:  "Bar",
-				Image: "/images/bars.svg",
+				Image: "/images/tally.png",
 				Id:    1,
 			},
 			// {
@@ -198,6 +202,70 @@ func ResultsData(data Data[Result], form FormData) PageData[Result] {
 func main() {
 	l = log.Default()
 
+	log.Println("============ application-golang starts ============")
+
+	err := os.Setenv("DISCOVERY_AS_LOCALHOST", "true")
+	if err != nil {
+		log.Fatalf("Error setting DISCOVERY_AS_LOCALHOST environment variable: %v", err)
+	}
+
+	walletPath := "wallet"
+	// remove any existing wallet from prior runs
+	os.RemoveAll(walletPath)
+	wallet, err := gateway.NewFileSystemWallet(walletPath)
+	if err != nil {
+		log.Fatalf("Failed to create wallet: %v", err)
+	}
+
+	if !wallet.Exists("appUser") {
+		err = populateWallet(wallet)
+		if err != nil {
+			log.Fatalf("Failed to populate wallet contents: %v", err)
+		}
+	}
+
+	ccpPath := filepath.Join(
+		"test-network",
+		"organizations",
+		"peerOrganizations",
+		"org1.example.com",
+		"connection-org1.yaml",
+	)
+
+	gw, err := gateway.Connect(
+		gateway.WithConfig(config.FromFile(filepath.Clean(ccpPath))),
+		gateway.WithIdentity(wallet, "appUser"),
+	)
+	if err != nil {
+		log.Fatalf("Failed to connect to gateway: %v", err)
+	}
+	defer gw.Close()
+
+	channelName := "mychannel"
+	if cname := os.Getenv("CHANNEL_NAME"); cname != "" {
+		channelName = cname
+	}
+
+	log.Println("--> Connecting to channel", channelName)
+	network, err := gw.GetNetwork(channelName)
+	if err != nil {
+		log.Fatalf("Failed to get network: %v", err)
+	}
+
+	chaincodeName := "vote"
+	if ccname := os.Getenv("CHAINCODE_NAME"); ccname != "" {
+		chaincodeName = ccname
+	}
+
+	log.Println("--> Using chaincode", chaincodeName)
+	contract := network.GetContract(chaincodeName)
+
+	result, err := contract.SubmitTransaction("InitLedger")
+	if err != nil {
+		log.Fatalf("Failed to Submit transaction: %v", err)
+	}
+	log.Println(string(result))
+
 	proto := getEnv("PROTO", "http")
 	host := getEnv("HOST", "localhost")
 	port := getEnv("PORT", ":4445")
@@ -257,10 +325,65 @@ func main() {
 	})
 
 	e.POST("/vote", func(context echo.Context) error {
+		id := context.FormValue("preselect")
+		result, err := contract.SubmitTransaction("AddVote", id)
+		if err != nil {
+			log.Fatalf("Failed to Submit transaction: %v", err)
+		}
+		log.Println(string(result))
 		return context.Render(200, "voted", NewFormData())
 	})
 
 	e.GET("/results", func(context echo.Context) error {
+		tallyJSON, err := contract.SubmitTransaction("TallyVotes")
+		if err != nil {
+			log.Fatalf("Failed to Submit transaction: %v", err)
+		}
+
+		tally := map[string]int{}
+		err = json.Unmarshal(tallyJSON, &tally)
+		if err != nil {
+			fmt.Println(err)
+			return err
+		}
+
+		values := []chart.Value{}
+		for label, count := range tally {
+			value := chart.Value{
+				Label: label,
+				Value: float64(count),
+			}
+			values = append(values, value)
+		}
+
+		bar := chart.BarChart{
+			Title: "Results",
+			Background: chart.Style{
+				Padding: chart.Box{
+					Top: 30,
+				},
+			},
+			Height:   256,
+			BarWidth: 50,
+			Bars:     values,
+		}
+
+		f, err := os.Create("images/tally.png")
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+
+		buffer := bytes.NewBuffer([]byte{})
+		err = bar.Render(chart.PNG, buffer)
+		if err != nil {
+			fmt.Println(err)
+			return err
+		}
+
+		buffer.WriteTo(f)
+
+		fmt.Println("Bar chart created successfully!")
 		data := DummyResultsData()
 		return context.Render(200, "results", ResultsData(*data, NewFormData()))
 	})
@@ -384,4 +507,43 @@ func getEnv(key, def string) string {
 		return value
 	}
 	return def
+}
+
+func populateWallet(wallet *gateway.Wallet) error {
+	log.Println("============ Populating wallet ============")
+	credPath := filepath.Join(
+		"test-network",
+		"organizations",
+		"peerOrganizations",
+		"org1.example.com",
+		"users",
+		"User1@org1.example.com",
+		"msp",
+	)
+
+	certPath := filepath.Join(credPath, "signcerts", "cert.pem")
+	// read the certificate pem
+	cert, err := os.ReadFile(filepath.Clean(certPath))
+	if err != nil {
+		return err
+	}
+
+	keyDir := filepath.Join(credPath, "keystore")
+	// there's a single file in this dir containing the private key
+	files, err := os.ReadDir(keyDir)
+	if err != nil {
+		return err
+	}
+	if len(files) != 1 {
+		return fmt.Errorf("keystore folder should have contain one file")
+	}
+	keyPath := filepath.Join(keyDir, files[0].Name())
+	key, err := os.ReadFile(filepath.Clean(keyPath))
+	if err != nil {
+		return err
+	}
+
+	identity := gateway.NewX509Identity("Org1MSP", string(cert), string(key))
+
+	return wallet.Put("appUser", identity)
 }

@@ -19,11 +19,9 @@
         <script>
             document.getElementById('login-button').addEventListener('click', async function() {
                 var isLogin = await login();
-                console.log('after login()');
                 if (isLogin) {
                     htmx.ajax('POST', '/login', {target:'#content', swap:'outerHTML'});
                 }
-                console.log('after ajax');
             });
         </script>
     </div>
